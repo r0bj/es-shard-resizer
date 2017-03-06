@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	ver string = "0.11"
+	ver string = "0.12"
 )
 
 var (
@@ -134,7 +134,7 @@ func sumIndexShardSize(shards []Shard) map[string]map[string]int {
 		if shard.State == "STARTED" && shard.PriRep == "p" {
 			i, err := strconv.Atoi(shard.Store)
 			if err != nil {
-				fmt.Println(err)
+				log.Errorf("cannot convert string to int: ", err)
 				continue
 			}
 
@@ -164,7 +164,7 @@ func calculateNumerOfShards(shards []Shard, templates map[string]Template, shard
 		if matches := re.FindStringSubmatch(k); matches != nil {
 			pattern = matches[1]
 		} else {
-			fmt.Printf("Cannot find pattern in index %s\n", k)
+			log.Warnf("cannot find pattern in index %s", k)
 			continue
 		}
 
@@ -230,7 +230,7 @@ func getShards(esURL string, timeout int) ([]Shard, error) {
 func readTemplateFile(filePath string) (string, error) {
 	b, err := ioutil.ReadFile(filePath)
 	if err != nil {
-		fmt.Println(err)
+		log.Errorf("cannot read template file %s: %s", filePath, err)
 		return "", err
 	}
 	return string(b), nil
@@ -265,7 +265,6 @@ func sendTemplate(esURL string, timeout int, templateSource, templateName string
 	url := esURL + "/_template/" + templateName
 	tpl := getRenderedTemplate(templateSource, strconv.Itoa(numberOfShards), templateName, templateOrder)
 
-	// fmt.Println(tpl)
 	_, err := esQueryPut(url, timeout, tpl)
 	if err != nil {
 		return err
