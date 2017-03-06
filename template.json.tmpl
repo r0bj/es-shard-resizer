@@ -1,0 +1,73 @@
+{
+  "aliases": {},
+  "mappings": {
+    "_default_": {
+      "_all": {
+        "enabled": true,
+        "norms": false
+      },
+      "properties": {
+        "@version": {
+          "type": "keyword",
+          "include_in_all": false
+        },
+        "@timestamp": {
+          "type": "date",
+          "include_in_all": false
+        },
+        "geoip": {
+          "properties": {
+            "longitude": {
+              "type": "half_float"
+            },
+            "location": {
+              "type": "geo_point"
+            },
+            "ip": {
+              "type": "ip"
+            },
+            "latitude": {
+              "type": "half_float"
+            }
+          },
+          "dynamic": true
+        }
+      },
+      "dynamic_templates": [
+        {
+          "message_field": {
+            "match_mapping_type": "string",
+            "mapping": {
+              "type": "text",
+              "norms": false
+            },
+            "path_match": "message"
+          }
+        },
+        {
+          "string_fields": {
+            "match": "*",
+            "match_mapping_type": "string",
+            "mapping": {
+              "type": "text",
+              "fields": {
+                "keyword": {
+                  "type": "keyword"
+                }
+              },
+              "norms": false
+            }
+          }
+        }
+      ]
+    }
+  },
+  "settings": {
+    "index": {
+      "refresh_interval": "5s",
+      "number_of_shards": "{{ .NumberOfShards }}"
+    }
+  },
+  "template": "{{ .TemplatePattern }}",
+  "order": {{ .TemplateOrder }}
+}
