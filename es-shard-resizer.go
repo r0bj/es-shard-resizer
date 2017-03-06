@@ -17,11 +17,11 @@ import (
 )
 
 const (
-	ver string = "0.12"
+	ver string = "0.14"
 )
 
 var (
-	esURL = kingpin.Flag("url", "elasticsearch URL, eg.: 'http://localhost:9200'").Default("http://logs-prod.es.service.sjc.consul:9999").Short('u').String()
+	esURL = kingpin.Flag("url", "elasticsearch URL").Default("http://localhost:9200").Short('u').String()
 	timeout = kingpin.Flag("timeout", "timeout for HTTP requests in seconds").Default("10").Short('t').Int()
 	shardLimit = kingpin.Flag("shard-limit", "max shard size in GB").Default("32").Short('s').Int()
 	defaultShardNumber = kingpin.Flag("default-shard-number", "default number of shards").Default("1").Short('d').Int()
@@ -158,9 +158,9 @@ func calculateNumerOfShards(shards []Shard, templates map[string]Template, shard
 	indexes := sumIndexShardSize(shards)
 
 	results := make(map[string]map[string]interface{})
+	re := regexp.MustCompile(`(logstash-\S+)-\d{4}\.\d{2}\.\d{2}$`)
 	for k, v := range indexes {
 		var pattern string
-		re := regexp.MustCompile(`(logstash-\S+)-\d{4}\.\d{2}\.\d{2}$`)
 		if matches := re.FindStringSubmatch(k); matches != nil {
 			pattern = matches[1]
 		} else {
