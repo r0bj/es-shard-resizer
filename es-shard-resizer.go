@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	ver string = "0.14"
+	ver string = "0.15"
 )
 
 var (
@@ -158,7 +158,7 @@ func calculateNumerOfShards(shards []Shard, templates map[string]Template, shard
 	indexes := sumIndexShardSize(shards)
 
 	results := make(map[string]map[string]interface{})
-	re := regexp.MustCompile(`(logstash-\S+)-\d{4}\.\d{2}\.\d{2}$`)
+	re := regexp.MustCompile(`^(logstash-\S+)-\d{4}\.\d{2}\.\d{2}$`)
 	for k, v := range indexes {
 		var pattern string
 		if matches := re.FindStringSubmatch(k); matches != nil {
