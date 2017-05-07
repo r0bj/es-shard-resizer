@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	ver string = "0.15"
+	ver string = "0.16"
 )
 
 var (
@@ -26,7 +26,7 @@ var (
 	shardLimit = kingpin.Flag("shard-limit", "max shard size in GB").Default("32").Short('s').Int()
 	defaultShardNumber = kingpin.Flag("default-shard-number", "default number of shards").Default("1").Short('d').Int()
 	templateFilePath = kingpin.Flag("template-file", "path to template file").Default("template.json.tmpl").Short('m').String()
-	maxDeltaThreshold = kingpin.Flag("max-delta-threshold", "max difference in shard number while decreasing").Default("3").Int()
+	maxDeltaThreshold = kingpin.Flag("max-delta-threshold", "max percentage difference in shard number while decreasing").Default("15").Int()
 	dryRun = kingpin.Flag("dry-run", "dry run").Short('n').Bool()
 )
 
@@ -134,7 +134,7 @@ func sumIndexShardSize(shards []Shard) map[string]map[string]int {
 		if shard.State == "STARTED" && shard.PriRep == "p" {
 			i, err := strconv.Atoi(shard.Store)
 			if err != nil {
-				log.Errorf("cannot convert string to int: ", err)
+				log.Errorf("cannot convert string to int: %s (shard info: %s)", err, shard)
 				continue
 			}
 
@@ -317,16 +317,23 @@ func processData(esURL string, timeout int, shards []Shard, shardLimit, defaultS
 		} else {
 			// descreasing number of shards
 			if targetNumberOfShards < v["template_number_of_shards"].(int) {
-				if v["template_number_of_shards"].(int) - targetNumberOfShards > maxDeltaThreshold {
+				// calculating number of delta shards based on percentage
+				maxDeltaShards := int(float64(v["template_number_of_shards"].(int)) * float64(maxDeltaThreshold) / 100)
+				if maxDeltaShards < 1 {
+					maxDeltaShards = 1
+				}
+
+				if v["template_number_of_shards"].(int) - targetNumberOfShards > maxDeltaShards {
 					log.Infof(
-						"%s: calculated number of shards decreased to %v (current %v), it exceeds max delta threshold (%v), setting number of shards to %v",
+						"%s: calculated number of shards decreased from %v to %v, it exceeds max delta threshold (%v%% ~ %v shards), setting number of shards to %v",
 						v["template_pattern"].(string),
-						targetNumberOfShards,
 						v["template_number_of_shards"].(int),
+						targetNumberOfShards,
 						maxDeltaThreshold,
-						v["template_number_of_shards"].(int) - maxDeltaThreshold,
+						maxDeltaShards,
+						v["template_number_of_shards"].(int) - maxDeltaShards,
 					)							
-					targetNumberOfShards = v["template_number_of_shards"].(int) - maxDeltaThreshold
+					targetNumberOfShards = v["template_number_of_shards"].(int) - maxDeltaShards
 				// } else if targetNumberOfShards == 1 {
 				} else if targetNumberOfShards <= defaultShardNumber {
 					log.Infof(
