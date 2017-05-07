@@ -17,12 +17,12 @@ import (
 )
 
 const (
-	ver string = "0.16"
+	ver string = "0.17"
 )
 
 var (
 	esURL = kingpin.Flag("url", "elasticsearch URL").Default("http://localhost:9200").Short('u').String()
-	timeout = kingpin.Flag("timeout", "timeout for HTTP requests in seconds").Default("10").Short('t').Int()
+	timeout = kingpin.Flag("timeout", "timeout for HTTP requests in seconds").Default("20").Short('t').Int()
 	shardLimit = kingpin.Flag("shard-limit", "max shard size in GB").Default("32").Short('s').Int()
 	defaultShardNumber = kingpin.Flag("default-shard-number", "default number of shards").Default("1").Short('d').Int()
 	templateFilePath = kingpin.Flag("template-file", "path to template file").Default("template.json.tmpl").Short('m').String()
@@ -180,6 +180,7 @@ func calculateNumerOfShards(shards []Shard, templates map[string]Template, shard
 		}
 		results[k]["target_number_of_shards"] = v["size"] / shardLimit + 1
 		results[k]["template_pattern"] = pattern
+		results[k]["calculated_shards"] = v["number"]
 	}
 
 	return results, nil
@@ -315,6 +316,16 @@ func processData(esURL string, timeout int, shards []Shard, shardLimit, defaultS
 				targetNumberOfShards,
 			)
 		} else {
+			// if number of active valid shards is not equal number of shards in mapping template
+			if v["template_number_of_shards"].(int) != v["calculated_shards"].(int) {
+				log.Infof(
+					"%s: data gathered from %v shards, expected number of shards %v",
+					v["template_pattern"].(string),
+					v["calculated_shards"].(int),
+					v["template_number_of_shards"].(int),
+				)
+			}
+
 			// descreasing number of shards
 			if targetNumberOfShards < v["template_number_of_shards"].(int) {
 				// calculating number of delta shards based on percentage
