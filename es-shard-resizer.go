@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	ver string = "0.17"
+	ver string = "0.18"
 )
 
 var (
@@ -302,12 +302,21 @@ func processData(esURL string, timeout int, shards []Shard, shardLimit, defaultS
 	i := 1
 	for _, v := range calculatedShards {
 		targetNumberOfShards := v["target_number_of_shards"].(int)
-		if targetNumberOfShards == v["template_number_of_shards"].(int) {
-			continue
-		}
+
 		// if targetNumberOfShards == 1 && v["template_number_of_shards"].(int) == 0 {
 		if targetNumberOfShards <= defaultShardNumber && v["template_number_of_shards"].(int) == 0 {
+			log.Debugf(
+				"%s: creating individual template not needed",
+				v["template_pattern"].(string),
+			)
 			continue
+		}
+		if targetNumberOfShards == v["template_number_of_shards"].(int) {
+			log.Infof(
+				"%s: no change in number of shards %v",
+				v["template_pattern"].(string),
+				targetNumberOfShards,
+			)
 		}
 		if v["template_number_of_shards"].(int) == 0 {
 			log.Infof(
@@ -360,12 +369,20 @@ func processData(esURL string, timeout int, shards []Shard, shardLimit, defaultS
 					continue
 				}
 			}
-			log.Infof(
-				"%s: change number of shards %v -> %v",
-				v["template_pattern"].(string),
-				v["template_number_of_shards"].(int),
-				targetNumberOfShards,
-			)
+			if targetNumberOfShards == v["template_number_of_shards"].(int) {
+				log.Infof(
+					"%s: updating template with number of shards %v",
+					v["template_pattern"].(string),
+					v["template_number_of_shards"].(int),
+				)
+			} else {
+				log.Infof(
+					"%s: change number of shards %v -> %v",
+					v["template_pattern"].(string),
+					v["template_number_of_shards"].(int),
+					targetNumberOfShards,
+				)
+			}
 		}
 		err = sendTemplate(
 			esURL,
