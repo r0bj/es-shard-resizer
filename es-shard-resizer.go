@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	ver string = "0.18"
+	ver string = "0.19"
 )
 
 var (
@@ -26,6 +26,7 @@ var (
 	shardLimit = kingpin.Flag("shard-limit", "max shard size in GB").Default("32").Short('s').Int()
 	defaultShardNumber = kingpin.Flag("default-shard-number", "default number of shards").Default("1").Short('d').Int()
 	templateFilePath = kingpin.Flag("template-file", "path to template file").Default("template.json.tmpl").Short('m').String()
+	templateWildcardExtension = kingpin.Flag("template-wildcard-extension", "extension for template wildcard").Default("2").String()
 	maxDeltaThreshold = kingpin.Flag("max-delta-threshold", "max percentage difference in shard number while decreasing").Default("15").Int()
 	dryRun = kingpin.Flag("dry-run", "dry run").Short('n').Bool()
 )
@@ -237,10 +238,10 @@ func readTemplateFile(filePath string) (string, error) {
 	return string(b), nil
 }
 
-func getRenderedTemplate(templateSource, numberOfShards, templatePattern string, templateOrder int) string {
+func getRenderedTemplate(templateSource, numberOfShards, templatePattern string, templateOrder int, templateWildcardExtension string) string {
 	t := TemplateJSON{
 		numberOfShards,
-		templatePattern + "-*",
+		templatePattern + "-" + templateWildcardExtension + "*",
 		templateOrder,
 	}
 
@@ -258,13 +259,13 @@ func getRenderedTemplate(templateSource, numberOfShards, templatePattern string,
 	return tpl.String()
 }
 
-func sendTemplate(esURL string, timeout int, templateSource, templateName string, numberOfShards, templateOrder int, dryRun bool) error {
+func sendTemplate(esURL string, timeout int, templateSource, templateName string, numberOfShards, templateOrder int, templateWildcardExtension string, dryRun bool) error {
 	if dryRun {
 		log.Infof("%s: dry run, skipping", templateName)
 		return nil
 	}
 	url := esURL + "/_template/" + templateName
-	tpl := getRenderedTemplate(templateSource, strconv.Itoa(numberOfShards), templateName, templateOrder)
+	tpl := getRenderedTemplate(templateSource, strconv.Itoa(numberOfShards), templateName, templateOrder, templateWildcardExtension)
 
 	_, err := esQueryPut(url, timeout, tpl)
 	if err != nil {
@@ -287,14 +288,14 @@ func deleteTemplate(esURL string, timeout int, templateName string, dryRun bool)
 	return nil
 }
 
-func processData(esURL string, timeout int, shards []Shard, shardLimit, defaultShardNumber , maxDeltaThreshold int, templates map[string]Template, templateSource string, dryRun bool) error {
+func processData(esURL string, timeout int, shards []Shard, shardLimit, defaultShardNumber , maxDeltaThreshold int, templates map[string]Template, templateSource string, templateWildcardExtension string, dryRun bool) error {
 	calculatedShards, err := calculateNumerOfShards(shards, templates, shardLimit)
 	if err != nil {
 		return err
 	}
 
 	log.Infof("logstash: number of shards %v", defaultShardNumber)
-	err = sendTemplate(esURL, timeout, templateSource, "logstash", defaultShardNumber, 0, dryRun)
+	err = sendTemplate(esURL, timeout, templateSource, "logstash", defaultShardNumber, 0, templateWildcardExtension, dryRun)
 	if err != nil {
 		return err
 	}
@@ -391,6 +392,7 @@ func processData(esURL string, timeout int, shards []Shard, shardLimit, defaultS
 			v["template_pattern"].(string),
 			targetNumberOfShards,
 			i,
+			templateWildcardExtension,
 			dryRun,
 		)
 		if err != nil {
@@ -419,7 +421,7 @@ func main() {
 		panic(err)
 	}
 
-	err = processData(*esURL, *timeout, shards, *shardLimit, *defaultShardNumber, *maxDeltaThreshold, templates, templateSource, *dryRun)
+	err = processData(*esURL, *timeout, shards, *shardLimit, *defaultShardNumber, *maxDeltaThreshold, templates, templateSource, *templateWildcardExtension, *dryRun)
 	if err != nil {
 		panic(err)
 	}
