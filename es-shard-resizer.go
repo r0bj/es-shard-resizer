@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	ver string = "0.19"
+	ver string = "0.20"
 )
 
 var (
@@ -295,7 +295,7 @@ func processData(esURL string, timeout int, shards []Shard, shardLimit, defaultS
 	}
 
 	log.Infof("logstash: number of shards %v", defaultShardNumber)
-	err = sendTemplate(esURL, timeout, templateSource, "logstash", defaultShardNumber, 0, templateWildcardExtension, dryRun)
+	err = sendTemplate(esURL, timeout, templateSource, "logstash", defaultShardNumber, 0, "", dryRun)
 	if err != nil {
 		return err
 	}
