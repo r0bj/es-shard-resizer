@@ -14,10 +14,12 @@ import (
 	"github.com/parnurzeal/gorequest"
 	"gopkg.in/alecthomas/kingpin.v2"
 	log "github.com/Sirupsen/logrus"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/push"
 )
 
 const (
-	ver string = "0.20"
+	ver string = "0.22"
 )
 
 var (
@@ -28,7 +30,23 @@ var (
 	templateFilePath = kingpin.Flag("template-file", "path to template file").Default("template.json.tmpl").Short('m').String()
 	templateWildcardExtension = kingpin.Flag("template-wildcard-extension", "extension for template wildcard").Default("2").String()
 	maxDeltaThreshold = kingpin.Flag("max-delta-threshold", "max percentage difference in shard number while decreasing").Default("15").Int()
+	pushgatewayURL = kingpin.Flag("pushgateway-url", "pushgateway URL").Default("").String()
 	dryRun = kingpin.Flag("dry-run", "dry run").Short('n').Bool()
+)
+
+var (
+	batchJobSuccessTime = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "batchjob_last_success_timestamp_seconds",
+		Help: "The timestamp of the last successful completion of a batch job.",
+	})
+	batchJobSuccess = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "batchjob_last_success",
+		Help: "Success of the last batch job.",
+	})
+	batchJobDuration = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "batchjob_duration_seconds",
+		Help: "The duration of the last batch job in seconds.",
+	})
 )
 
 // Shard : struct containts shard data
@@ -58,6 +76,12 @@ type TemplateJSON struct {
 	TemplatePattern string
 	TemplateOrder int
 }
+
+// Health : struct containts cluster health data
+type Health struct {
+	ClusterName string `json:"cluster_name"`
+}
+
 
 func esQueryGet(url string, timeout int) (string, error) {
 	request := gorequest.New()
@@ -117,6 +141,15 @@ func parseShards(data string) ([]Shard, error) {
 		return shards, fmt.Errorf("JSON parse failed")
 	}
 	return shards, nil
+}
+
+func parseClusterHealth(data string) (Health, error) {
+	var health Health
+	err := json.Unmarshal([]byte(data), &health)
+	if err != nil {
+		return health, fmt.Errorf("JSON parse failed")
+	}
+	return health, nil
 }
 
 func parseTemplate(data string) (map[string]Template, error) {
@@ -227,6 +260,22 @@ func getShards(esURL string, timeout int) ([]Shard, error) {
 	}
 
 	return shards, nil
+}
+
+func getClusterName(esURL string, timeout int) (string, error) {
+	url := esURL + "/_cluster/health"
+
+	esData, err := esQueryGet(url, timeout)
+	if err != nil {
+		return "", err
+	}
+
+	health, err := parseClusterHealth(esData)
+	if err != nil {
+		return "", err
+	}
+
+	return health.ClusterName, nil
 }
 
 func readTemplateFile(filePath string) (string, error) {
@@ -404,25 +453,82 @@ func processData(esURL string, timeout int, shards []Shard, shardLimit, defaultS
 	return nil
 }
 
+func getInstance() (string, string) {
+	var k, v string
+	for k, v = range push.HostnameGroupingKey() {}
+	return k, v
+}
+
+func pushgatewayInitialize(pushgatewayURL, jobName, esURL string, timeout int) (*push.Pusher, time.Time, error) {
+	if pushgatewayURL != "" {
+		clusterName, err := getClusterName(esURL, timeout)
+		if err != nil {
+			return &push.Pusher{}, time.Time{}, err
+		}
+
+		registry := prometheus.NewRegistry()
+		registry.MustRegister(batchJobSuccessTime, batchJobSuccess, batchJobDuration)
+		pusher := push.New(pushgatewayURL, jobName).Grouping(getInstance()).Grouping("cluster_name", clusterName).Gatherer(registry)
+
+		return pusher, time.Now(), nil
+	}
+
+	return &push.Pusher{}, time.Time{}, nil
+}
+
+func sendPushgatewayMetrics(success bool, pushgatewayURL string, start time.Time, pusher *push.Pusher, dryRun bool) {
+	if pushgatewayURL != "" && !dryRun {
+		if success {
+			batchJobDuration.Set(time.Since(start).Seconds())
+			batchJobSuccessTime.SetToCurrentTime()
+			batchJobSuccess.Set(1)
+		} else {
+			batchJobSuccess.Set(0)
+		}
+
+		log.Infof("Sending metrics to pushgateway: %s", pushgatewayURL)
+		if err := pusher.Add(); err != nil {
+			log.Errorf("Could not send to pushgateway: %v", err)
+		}
+	}
+}
+
+func executeTask(esURL string, timeout int, shardLimit, defaultShardNumber , maxDeltaThreshold int, templateWildcardExtension, templateFilePath string, dryRun bool) error {
+	shards, err := getShards(esURL, timeout)
+	if err != nil {
+		return err
+	}
+
+	templates, err := getTemplates(esURL, timeout)
+	if err != nil {
+		return err
+	}
+
+	templateSource, err := readTemplateFile(templateFilePath)
+	if err != nil {
+		return err
+	}
+
+	err = processData(esURL, timeout, shards, shardLimit, defaultShardNumber, maxDeltaThreshold, templates, templateSource, templateWildcardExtension, dryRun)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func main() {
 	kingpin.Version(ver)
 	kingpin.Parse()
 
-	shards, err := getShards(*esURL, *timeout)
+	pusher, start, err := pushgatewayInitialize(*pushgatewayURL, "es-shard-resizer", *esURL, *timeout)
 	if err != nil {
-		panic(err)
-	}
-	templates, err := getTemplates(*esURL, *timeout)
-	if err != nil {
-		panic(err)
-	}
-	templateSource, err := readTemplateFile(*templateFilePath)
-	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
-	err = processData(*esURL, *timeout, shards, *shardLimit, *defaultShardNumber, *maxDeltaThreshold, templates, templateSource, *templateWildcardExtension, *dryRun)
-	if err != nil {
-		panic(err)
+	if err := executeTask(*esURL, *timeout, *shardLimit, *defaultShardNumber, *maxDeltaThreshold, *templateWildcardExtension, *templateFilePath, *dryRun); err == nil {
+		sendPushgatewayMetrics(true, *pushgatewayURL, start, pusher, *dryRun)
+	} else {
+		sendPushgatewayMetrics(false, *pushgatewayURL, start, pusher, *dryRun)
+		log.Fatal(err)
 	}
 }
