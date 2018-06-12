@@ -19,7 +19,7 @@ import (
 )
 
 const (
-	ver string = "0.22"
+	ver string = "0.23"
 )
 
 var (
@@ -35,17 +35,17 @@ var (
 )
 
 var (
-	batchJobSuccessTime = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "batchjob_last_success_timestamp_seconds",
-		Help: "The timestamp of the last successful completion of a batch job.",
+	ESShardResizerSuccessTime = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "es_shard_resizer_last_success_timestamp_seconds",
+		Help: "The timestamp of the last successful completion of a es-shard-resizer.",
 	})
-	batchJobSuccess = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "batchjob_last_success",
-		Help: "Success of the last batch job.",
+	ESShardResizerSuccess = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "es_shard_resizer_last_success",
+		Help: "Success of the last es-shard-resizer.",
 	})
-	batchJobDuration = prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: "batchjob_duration_seconds",
-		Help: "The duration of the last batch job in seconds.",
+	ESShardResizerDuration = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "es_shard_resizer_duration_seconds",
+		Help: "The duration of the last es-shard-resizer in seconds.",
 	})
 )
 
@@ -453,12 +453,6 @@ func processData(esURL string, timeout int, shards []Shard, shardLimit, defaultS
 	return nil
 }
 
-func getInstance() (string, string) {
-	var k, v string
-	for k, v = range push.HostnameGroupingKey() {}
-	return k, v
-}
-
 func pushgatewayInitialize(pushgatewayURL, jobName, esURL string, timeout int) (*push.Pusher, time.Time, error) {
 	if pushgatewayURL != "" {
 		clusterName, err := getClusterName(esURL, timeout)
@@ -467,8 +461,8 @@ func pushgatewayInitialize(pushgatewayURL, jobName, esURL string, timeout int) (
 		}
 
 		registry := prometheus.NewRegistry()
-		registry.MustRegister(batchJobSuccessTime, batchJobSuccess, batchJobDuration)
-		pusher := push.New(pushgatewayURL, jobName).Grouping(getInstance()).Grouping("cluster_name", clusterName).Gatherer(registry)
+		registry.MustRegister(ESShardResizerSuccessTime, ESShardResizerSuccess, ESShardResizerDuration)
+		pusher := push.New(pushgatewayURL, jobName).Grouping("cluster_name", clusterName).Gatherer(registry)
 
 		return pusher, time.Now(), nil
 	}
@@ -479,11 +473,11 @@ func pushgatewayInitialize(pushgatewayURL, jobName, esURL string, timeout int) (
 func sendPushgatewayMetrics(success bool, pushgatewayURL string, start time.Time, pusher *push.Pusher, dryRun bool) {
 	if pushgatewayURL != "" && !dryRun {
 		if success {
-			batchJobDuration.Set(time.Since(start).Seconds())
-			batchJobSuccessTime.SetToCurrentTime()
-			batchJobSuccess.Set(1)
+			ESShardResizerDuration.Set(time.Since(start).Seconds())
+			ESShardResizerSuccessTime.SetToCurrentTime()
+			ESShardResizerSuccess.Set(1)
 		} else {
-			batchJobSuccess.Set(0)
+			ESShardResizerSuccess.Set(0)
 		}
 
 		log.Infof("Sending metrics to pushgateway: %s", pushgatewayURL)
